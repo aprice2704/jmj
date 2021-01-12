@@ -22,7 +22,7 @@ type Synth struct {
 	SR         float64   // Samples/Second
 	Tick       float64   // Seconds/Sample
 	WTick      float64   // Wavenumber/Sample, we use this to avoid disconinuities during frequency changes
-	lastSample float64   // when was the last sample we made (seconds from T0)
+	lastSample float64   // when was the last sample we made (wavenumber)
 }
 
 // NewSynth makes and inits a new one
@@ -65,12 +65,17 @@ func main() {
 		}
 		if event.Key == keyboard.KeyArrowUp {
 			mySyn.NewFreq(mySyn.Freq + 1.0)
-			fmt.Printf("Freq is %f\n", mySyn.Freq)
 		}
 		if event.Key == keyboard.KeyArrowDown {
 			mySyn.NewFreq(mySyn.Freq - 1.0)
-			fmt.Printf("Freq is %f\n", mySyn.Freq)
 		}
+		if event.Key == keyboard.KeyPgdn {
+			mySyn.NewFreq(mySyn.Freq - 10.0)
+		}
+		if event.Key == keyboard.KeyPgup {
+			mySyn.NewFreq(mySyn.Freq + 10.0)
+		}
+		fmt.Printf("Freq is %f\n", mySyn.Freq)
 	}
 }
 
@@ -84,8 +89,8 @@ func (syn *Synth) Stream(samples [][2]float64) (n int, ok bool) {
 	//	fmt.Printf("N is %d, delta T is %.9f\n", len(samples), syn.lastSample)
 	wN := syn.lastSample // in wavenumber
 	for i := range samples {
-		samples[i][0] = 0.2 * (math.Sin(wN)) // + math.Sin(wN*2.0))
-		samples[i][1] = 0.2 * (math.Cos(wN)) // *0.5) + math.Sin(wN*4.0))
+		samples[i][0] = math.Sin(wN)
+		samples[i][1] = math.Sin(wN)
 		wN += syn.WTick
 	}
 	syn.lastSample = wN
