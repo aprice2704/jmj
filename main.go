@@ -15,33 +15,45 @@ const (
 	τ = 2 * math.Pi
 )
 
+// Seconds are quantities of time
+type Seconds float64
+
+// Hertz is a fequency
+type Hertz Seconds
+
+// Angle is a portion of a wave, typically a phase
+type Angle float64
+
 // Synth is
 type Synth struct {
 	T0         time.Time // When this synth started playing
-	Freq       float64   // Hz
-	SR         float64   // Samples/Second
-	Tick       float64   // Seconds/Sample
-	WTick      float64   // Wavenumber/Sample, we use this to avoid disconinuities during frequency changes
-	lastSample float64   // when was the last sample we made (wavenumber)
+	Freq       Hertz     // Hz
+	SR         Hertz     // Samples/Second
+	Tick       Seconds   // Seconds/Sample
+	DeltaPhase Angle     // We use this to avoid disconinuities during frequency changes
+	lastSample Angle     // phase of the last sample we made
+	lastAt     Seconds   // When we made the last sample
 }
 
 // NewSynth makes and inits a new one
-func NewSynth(t0 time.Time, f float64, sr float64) *Synth {
+func NewSynth(t0 time.Time, f Hertz, sr Hertz) *Synth {
 	syn := Synth{T0: t0, Freq: f, SR: sr}
-	syn.Tick = 1 / sr
-	syn.WTick = f * τ * syn.Tick
+	syn.Tick = Seconds(1 / sr)
+	syn.DeltaPhase = Angle(Seconds(f) * τ * syn.Tick)
 	syn.lastSample = 0.0
+	syn.lastAt = 0.0
 	return &syn
 }
 
-// NewFreq updates the frequency and wtick
-func (syn *Synth) NewFreq(f float64) {
+// NewFreq updates the frequency and Phase
+func (syn *Synth) NewFreq(f Hertz) {
 	syn.Freq = f
-	syn.WTick = f * τ * syn.Tick
+	syn.DeltaPhase = Angle(Seconds(f) * τ * syn.Tick)
 }
 
 func main() {
-	SR := float64(44100)
+
+	SR := Hertz(44100)
 	mySyn := NewSynth(time.Now(), 330, SR)
 	sr := beep.SampleRate(SR)
 	speaker.Init(sr, sr.N(time.Second/100))
@@ -53,6 +65,7 @@ func main() {
 	defer func() {
 		_ = keyboard.Close()
 	}()
+
 	fmt.Println("Press ESC to quit")
 	for {
 		event := <-keysEvents
@@ -87,12 +100,17 @@ func (syn Synth) Err() error {
 // Stream satisifies beep.Streamer
 func (syn *Synth) Stream(samples [][2]float64) (n int, ok bool) {
 	//	fmt.Printf("N is %d, delta T is %.9f\n", len(samples), syn.lastSample)
-	wN := syn.lastSample // in wavenumber
+	phase := syn.lastSample
+	when := syn.lastAt
 	for i := range samples {
-		samples[i][0] = math.Sin(wN)
-		samples[i][1] = math.Sin(wN)
-		wN += syn.WTick
+		// samples[i][0] = GaussianRepeat(1, 1, 2, when) * math.Sin(float64(phase))
+		// samples[i][1] = GaussianRepeat(1, 1, 2, when) * math.Sin(float64(phase))
+		samples[i][0] = GaussianRepeat(0.05, 0.02, 0.1, when) * math.Sin(float64(phase))
+		samples[i][1] = GaussianRepeat(0.05, 0.02, 0.1, when) * math.Sin(float64(phase))
+		phase += syn.DeltaPhase
+		when += syn.Tick
 	}
-	syn.lastSample = wN
+	syn.lastSample = phase
+	syn.lastAt = when
 	return len(samples), true
 }
