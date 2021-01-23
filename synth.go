@@ -21,12 +21,13 @@ type Synth struct {
 	DeltaPhase Angle     // Radians/Sample
 	lastSample Angle     // phase of the last sample we made. Used to avoid disconinuities during frequency changes
 	lastAt     Seconds   // When we made the last sample
+	lastTime   time.Time //
 	Sounds     []*Sound  // Sounds being considered for playing
 }
 
 // Sound is a note played at a particular time
 type Sound struct {
-	Note
+	*Note
 	Start Seconds
 	End   Seconds
 }
@@ -55,7 +56,7 @@ func (syn Synth) Now() Seconds {
 
 // AddSound adds a note to be played starting at time 'when'
 func (syn *Synth) AddSound(n *Note, when Seconds) {
-	ns := &Sound{Note: *n, Start: when, End: when + n.Length()}
+	ns := &Sound{Note: n, Start: when, End: when + n.Length()}
 	syn.Sounds = append(syn.Sounds, ns)
 	//	sort.Slice(syn.Sounds, func(i, j int) bool { return syn.Sounds[i].End < syn.Sounds[j].End })
 }

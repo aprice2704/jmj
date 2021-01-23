@@ -31,9 +31,14 @@ func (osc *Oscillator) Amplitude(t Seconds) float64 {
 
 // NewSine returns a new sine wave oscillator
 func NewSine(newν Hertz) *Oscillator {
-	return &Oscillator{ν: newν, Phase: 0, Wave: func(a Angle) float64 {
-		return math.Sin(float64(a))
-	}}
+	return &Oscillator{
+		ν:       newν,
+		Phase:   0,
+		PhaseAt: 0,
+		Wave: func(a Angle) float64 {
+			return math.Sin(float64(a))
+		},
+	}
 }
 
 // NewFreq updates the frequency and Phase
