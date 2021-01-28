@@ -2,12 +2,8 @@ package main
 
 import (
 	"fmt"
-	"image"
 	"image/color"
-	"image/draw"
-	"image/jpeg"
 	"math"
-	"os"
 	"strings"
 	"time"
 
@@ -22,8 +18,12 @@ const (
 	τ = 2 * math.Pi
 )
 
-// Seconds are quantities of time
+// Seconds are quantities of time, either they are global absolute times (e.g. relative to the start of a synth)
+//    or they are relocatable intervals without a specific beginning
 type Seconds float64
+
+// LocalSeconds are times relative to the start of an osciallator/filter/envelope etc.
+type LocalSeconds Seconds
 
 // Hertz is a fequency (1/Seconds)
 type Hertz Seconds
@@ -31,14 +31,14 @@ type Hertz Seconds
 // Angle is a portion of a wave, typically a phase, also radians
 type Angle float64
 
+// Volts is the notional amplitude of a signal, with +-1 volt being the maximum that can be sent to an output device
+// and +1 being the maximum value of a filter etc.
+type Volts float64
+
 const (
 	fontPath = "Go-Mono.ttf"
 	fontSize = 24
 )
-
-var recordingL = make([]float64, 0, 1000000)
-var recordingR = make([]float64, 0, 1000000)
-var recordIt bool
 
 var (
 	imCyan  = color.RGBA{100, 200, 200, 0xff}
@@ -61,7 +61,7 @@ func main() {
 	SR := Hertz(44100)
 	mySyn := NewSynth(time.Now(), 330, SR)
 	sr := beep.SampleRate(SR)
-	speaker.Init(sr, sr.N(time.Second/5))
+	speaker.Init(sr, sr.N(time.Second/200))
 	speaker.Play(mySyn)
 
 	if err := sdl.Init(sdl.INIT_VIDEO); err != nil {
@@ -105,7 +105,9 @@ func main() {
 	lowRowOut := "ABCDEFG"
 
 	running := true
-	recordIt = true
+	mySyn.recordIt = true
+
+RunLoop:
 	for running {
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			switch t := event.(type) {
@@ -125,10 +127,13 @@ func main() {
 				switch t.Type {
 				case 768:
 					//					typeName = "KeyDown"
+					//mySyn.recordIt = true
 					freq := MiddleCfreq
 					c := fmt.Sprintf("%c", t.Keysym.Sym)
 					if c == "q" {
 						running = false
+						mySyn.Graphout()
+						break RunLoop // bail right away
 					}
 					p := strings.Index(lowRowIn, c)
 					ns := "?"
@@ -136,11 +141,13 @@ func main() {
 						ns = lowRowOut[p:p+1] + "4"
 						freq = GetFreq(ns)
 					}
-					fmt.Printf("Adding sound %s at %f from key %s (index %d)\n", ns, freq, c, p)
-					myOsc := NewSine(freq)
-					myEnv := NewTriangle(1, false, 1)
-					myNote := &Note{BaseFreq: freq, Env: myEnv, Osc: myOsc}
-					mySyn.AddSound(myNote, mySyn.Now())
+					globalT := mySyn.Now()
+					fmt.Printf("t: %7.4f | Adding sound %s at %f from key %s (index %d)\n", globalT, ns, freq, c, p)
+					//					fmt.Printf("Keystroke at %f\n", globalT)
+					myOsc := NewSine(globalT, freq)
+					myEnv := NewTriangle(globalT, 0.2, false, 0.2)
+					myNote := NewNote(globalT, freq, myEnv, myOsc)
+					mySyn.AddSound(myNote, globalT)
 				case 769:
 					//					typeName = "KeyUp"
 				}
@@ -151,36 +158,8 @@ func main() {
 			}
 			textAt(font, blue, black, mainSurf, 2, 62, fmt.Sprintf("Sounds: %d", len(mySyn.Sounds)))
 			window.UpdateSurface()
-			time.Sleep(time.Millisecond)
+			//	time.Sleep(time.Millisecond)
 		}
-	}
-
-	if recordIt {
-		width := 800
-		w2 := float64(width) / 2
-		step := 5
-		height := len(recordingR) / step
-		upLeft := image.Point{0, 0}
-		lowRight := image.Point{width, height}
-		all := image.Rectangle{upLeft, lowRight}
-		img := image.NewRGBA(all)
-		bg := image.NewUniform(imWhite)
-		draw.Draw(img, all, bg, image.Pt(0, 0), draw.Over)
-		row := 0
-		for samp := 0; samp < len(recordingR); samp += step {
-			lt := int(w2)
-			rt := int((1 + recordingR[samp]) * w2)
-			if lt > rt {
-				lt, rt = rt, lt
-			}
-			for s := lt; s < rt; s++ {
-				img.Set(s, row, imBlue)
-			}
-			img.Set(width/2, row, imBlack)
-			row++
-		}
-		f, _ := os.Create("line.jpg")
-		jpeg.Encode(f, img, &jpeg.Options{Quality: 95})
 	}
 
 }
@@ -208,37 +187,3 @@ func textAt(f *ttf.Font, fgColor sdl.Color, bgColor sdl.Color, s *sdl.Surface, x
 
 	return
 }
-
-var lastprint time.Time
-
-// Stream satisifies beep.Streamer, computes the instantaneous amplitude for each channel.
-func (syn *Synth) Stream(samples [][2]float64) (n int, ok bool) {
-	when := syn.lastAt
-	for i := range samples {
-		when += syn.Tick
-		aR := syn.Amplitude(when)
-		aL := syn.Amplitude(when)
-		samples[i][0] = aR
-		samples[i][1] = aL
-		if recordIt {
-			recordingR = append(recordingR, aR)
-			recordingL = append(recordingL, aL)
-		}
-	}
-	syn.lastAt = when
-	syn.lastTime = time.Now()
-	return len(samples), true
-}
-
-// line := charts.NewLine()
-// line.SetGlobalOptions(
-// 	charts.WithTitleOpts(opts.Title{Title: "Sound Output", Subtitle: "Final result, right channel only"}),
-// 	charts.WithDataZoomOpts(opts.DataZoom{Type: "inside", Start: 0, End: 100}),
-// 	charts.WithToolboxOpts(opts.Toolbox{Feature: &opts.ToolBoxFeature{DataZoom: &opts.ToolBoxFeatureDataZoom{Show: true}}}),
-// )
-// line.SetXAxis(opts.XAxis{Name: "Sample #", Type: "time"})
-// d := make([]opts.LineData, len(recordingR), len(recordingR))
-// for i, v := range recordingR {
-// 	d[i].Value = v
-// }
-// line.AddSeries("Right Amplitude", d)
